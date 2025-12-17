@@ -34,8 +34,9 @@ class MULTModel(nn.Module):
             combined_dim = 2 * self.d_l   # assuming d_l == d_a == d_v
         else:
             combined_dim = 2 * (self.d_l + self.d_a + self.d_v)
-        
-        output_dim = hyp_params.output_dim        # This is actually not a hyperparameter :-)
+
+        # Force 8 logits (4 emotions * 2) for IEMOCAP so downstream reshaping is consistent.
+        output_dim = 8 if hyp_params.dataset == 'iemocap' else hyp_params.output_dim        # This is actually not a hyperparameter :-)
 
         # 1. Temporal convolutional layers
         self.proj_l = nn.Conv1d(self.orig_d_l, self.d_l, kernel_size=1, padding=0, bias=False)
@@ -143,4 +144,5 @@ class MULTModel(nn.Module):
         last_hs_proj += last_hs
         
         output = self.out_layer(last_hs_proj)
+        # Return both logits and fused features to enable auxiliary DA losses.
         return output, last_hs

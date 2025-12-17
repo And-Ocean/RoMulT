@@ -19,10 +19,10 @@ parser.add_argument('--aonly', action='store_true',
                     help='use the crossmodal fusion into a (default: False)')
 parser.add_argument('--lonly', action='store_true',
                     help='use the crossmodal fusion into l (default: False)')
-parser.add_argument('--aligned', action='store_true',
-                    help='consider aligned experiment or not (default: False)')
-parser.add_argument('--dataset', type=str, default='mosei_senti',
-                    help='dataset to use (default: mosei_senti)')
+parser.add_argument('--aligned', action='store_true', default=True,
+                    help='consider aligned experiment or not (default: True for IEMOCAP)')
+parser.add_argument('--dataset', type=str, default='iemocap',
+                    help='dataset to use (default: iemocap)')
 parser.add_argument('--data_path', type=str, default='data',
                     help='path for storing the dataset')
 
@@ -149,4 +149,3 @@ hyp_params.criterion = criterion_dict.get(dataset, 'L1Loss')
 
 if __name__ == '__main__':
     test_loss = train.initiate(hyp_params, train_loader, valid_loader, test_loader)
-

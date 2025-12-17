@@ -36,7 +36,8 @@ def initiate(hyp_params, train_loader, valid_loader, test_loader):
         model = model.cuda()
 
     optimizer = getattr(optim, hyp_params.optim)(model.parameters(), lr=hyp_params.lr)
-    criterion = getattr(nn, hyp_params.criterion)()
+    # Use explicit CrossEntropy for IEMOCAP's 4 binary heads; fall back to configured loss otherwise.
+    criterion = nn.CrossEntropyLoss() if hyp_params.dataset == 'iemocap' else getattr(nn, hyp_params.criterion)()
     if hyp_params.aligned or hyp_params.model=='MULT':
         ctc_criterion = None
         ctc_a2l_module, ctc_v2l_module = None, None
@@ -89,9 +90,10 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
         num_batches = hyp_params.n_train // hyp_params.batch_size
         proc_loss, proc_size = 0, 0
         start_time = time.time()
+        da_weight = getattr(hyp_params, 'da_weight', 0.0)
         for i_batch, (batch_X, batch_Y, batch_META) in enumerate(train_loader):
             sample_ind, text, audio, vision = batch_X
-            eval_attr = batch_Y.squeeze(-1)   # if num of labels is 1
+                eval_attr = batch_Y.squeeze(-1)   # if num of labels is 1
             
             model.zero_grad()
             if ctc_criterion is not None:
@@ -145,22 +147,33 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
                 for i in range(batch_chunk):
                     text_i, audio_i, vision_i = text_chunks[i], audio_chunks[i], vision_chunks[i]
                     eval_attr_i = eval_attr_chunks[i]
-                    preds_i, hiddens_i = net(text_i, audio_i, vision_i)
-                    
+                    preds_i, features_i = net(text_i, audio_i, vision_i)
+
                     if hyp_params.dataset == 'iemocap':
-                        preds_i = preds_i.view(-1, 2)
-                        eval_attr_i = eval_attr_i.view(-1)
-                    raw_loss_i = criterion(preds_i, eval_attr_i) / batch_chunk
+                        reshaped_preds = preds_i.view(-1, 2)              # (B*4, 2)
+                        reshaped_labels = eval_attr_i.view(-1)            # (B*4,)
+                        cls_loss_i = criterion(reshaped_preds, reshaped_labels) / batch_chunk
+                        # TODO: Calculate DA_loss(features_source, features_target) here using features_i.
+                        da_loss_i = 0.0
+                        raw_loss_i = cls_loss_i + da_weight * da_loss_i
+                    else:
+                        raw_loss_i = criterion(preds_i, eval_attr_i) / batch_chunk
+
                     raw_loss += raw_loss_i
                     raw_loss_i.backward()
                 ctc_loss.backward()
                 combined_loss = raw_loss + ctc_loss
             else:
-                preds, hiddens = net(text, audio, vision)
+                preds, features = net(text, audio, vision)
                 if hyp_params.dataset == 'iemocap':
-                    preds = preds.view(-1, 2)
-                    eval_attr = eval_attr.view(-1)
-                raw_loss = criterion(preds, eval_attr)
+                    reshaped_preds = preds.view(-1, 2)              # (B*4, 2)
+                    reshaped_labels = eval_attr.view(-1)            # (B*4,)
+                    cls_loss = criterion(reshaped_preds, reshaped_labels)
+                    # TODO: Calculate DA_loss(features_source, features_target) here using features.
+                    da_loss = 0.0
+                    raw_loss = cls_loss + da_weight * da_loss
+                else:
+                    raw_loss = criterion(preds, eval_attr)
                 combined_loss = raw_loss + ctc_loss
                 combined_loss.backward()
             
@@ -216,8 +229,8 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
                 net = nn.DataParallel(model) if batch_size > 10 else model
                 preds, _ = net(text, audio, vision)
                 if hyp_params.dataset == 'iemocap':
-                    preds = preds.view(-1, 2)
-                    eval_attr = eval_attr.view(-1)
+                    preds = preds.view(-1, 2)              # (B*4, 2)
+                    eval_attr = eval_attr.view(-1)         # (B*4,)
                 total_loss += criterion(preds, eval_attr).item() * batch_size
 
                 # Collect the results into dictionary
