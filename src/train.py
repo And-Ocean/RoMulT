@@ -31,20 +31,12 @@ def initiate(hyp_params, train_loader, valid_loader, test_loader):
     optimizer = getattr(optim, hyp_params.optim)(model.parameters(), lr=hyp_params.lr)
     # Use explicit CrossEntropy for IEMOCAP's 4 binary heads; fall back to configured loss otherwise.
     criterion = nn.CrossEntropyLoss() if hyp_params.dataset == 'iemocap' else getattr(nn, hyp_params.criterion)()
-    ctc_criterion = None
-    ctc_a2l_module, ctc_v2l_module = None, None
-    ctc_a2l_optimizer, ctc_v2l_optimizer = None, None
     
     scheduler = ReduceLROnPlateau(optimizer, mode='min', patience=hyp_params.when, factor=0.1)
     writer = SummaryWriter(log_dir=os.path.join("runs", hyp_params.name))
     settings = {'model': model,
                 'optimizer': optimizer,
                 'criterion': criterion,
-                'ctc_a2l_module': ctc_a2l_module,
-                'ctc_v2l_module': ctc_v2l_module,
-                'ctc_a2l_optimizer': ctc_a2l_optimizer,
-                'ctc_v2l_optimizer': ctc_v2l_optimizer,
-                'ctc_criterion': ctc_criterion,
                 'scheduler': scheduler,
                 'writer': writer,
                 'device': device}
@@ -61,28 +53,21 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
     model = settings['model']
     optimizer = settings['optimizer']
     criterion = settings['criterion']    
-    
-    ctc_a2l_module = settings['ctc_a2l_module']
-    ctc_v2l_module = settings['ctc_v2l_module']
-    ctc_a2l_optimizer = settings['ctc_a2l_optimizer']
-    ctc_v2l_optimizer = settings['ctc_v2l_optimizer']
-    ctc_criterion = settings['ctc_criterion']
-    
+
     scheduler = settings['scheduler']
     writer = settings['writer']
     device = settings['device']
-    
 
     device_idx = device.index if hyp_params.use_cuda and device.type == "cuda" else None
     device_ids = [device_idx] if device_idx is not None else None
 
-    def train(model, optimizer, criterion, ctc_a2l_module, ctc_v2l_module, ctc_a2l_optimizer, ctc_v2l_optimizer, ctc_criterion):
+    def train(model, optimizer, criterion):
         epoch_loss = 0
         model.train()
         num_batches = hyp_params.n_train // hyp_params.batch_size
         proc_loss, proc_size = 0, 0
         start_time = time.time()
-        da_weight = getattr(hyp_params, 'da_weight', 0.0)
+        da_weight = getattr(hyp_params, 'da_weight', 0.1)
         da_loss_fn = DA_Loss(n_moments=getattr(hyp_params, 'cmd_k', 5))
         if hyp_params.use_cuda:
             da_loss_fn = da_loss_fn.to(device)
@@ -99,12 +84,9 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
                 missing_mask = None
 
             sample_ind, text_full, audio_full, vision_full = batch_X_full
-            eval_attr = batch_Y.squeeze(-1)   # if num of labels is 1
+            eval_attr = batch_Y.squeeze(-1) 
             
             model.zero_grad()
-            if ctc_criterion is not None:
-                ctc_a2l_module.zero_grad()
-                ctc_v2l_module.zero_grad()
                 
             if hyp_params.use_cuda:
                 text_full = text_full.to(device)
@@ -122,9 +104,7 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
             
             batch_size = text_full.size(0)
             batch_chunk = hyp_params.batch_chunk
-            
-            ctc_loss = 0
-                
+                            
             combined_loss = 0
             net = nn.DataParallel(model, device_ids=device_ids, output_device=device_idx) if batch_size > 10 and hyp_params.use_cuda else model
             step_cls = 0.0
@@ -152,7 +132,7 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
                         reshaped_labels = eval_attr_i.view(-1)            # (B*4,)
                         cls_loss_i = criterion(reshaped_preds, reshaped_labels) / batch_chunk
                         if da_weight > 0:
-                            cmd_loss_i = da_loss_fn(features_i, features_miss_i) / batch_chunk
+                            cmd_loss_i = da_loss_fn(features_i.detach(), features_miss_i) / batch_chunk
                         else:
                             cmd_loss_i = 0.0
                         raw_loss_i = cls_loss_i + da_weight * cmd_loss_i
@@ -177,14 +157,14 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
                     reshaped_preds = preds.view(-1, 2)              # (B*4, 2)
                     reshaped_labels = eval_attr.view(-1)            # (B*4,)
                     cls_loss = criterion(reshaped_preds, reshaped_labels)
-                    cmd_loss = da_loss_fn(features, features_miss) if da_weight > 0 else 0.0
+                    cmd_loss = da_loss_fn(features.detach(), features_miss) if da_weight > 0 else 0.0
                     raw_loss = cls_loss + da_weight * cmd_loss
                     step_cls = cls_loss.item()
                     step_cmd = cmd_loss.item() if torch.is_tensor(cmd_loss) else float(cmd_loss)
                 else:
                     raw_loss = criterion(preds, eval_attr)
                     step_cls = raw_loss.item()
-                combined_loss = raw_loss + ctc_loss
+                combined_loss = raw_loss
                 combined_loss.backward()
             
             torch.nn.utils.clip_grad_norm_(model.parameters(), hyp_params.clip)
@@ -202,7 +182,7 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
         writer.add_scalar("train/cmd_loss", epoch_cmd_sum / denom, epoch)
         return epoch_loss / hyp_params.n_train
 
-    def evaluate(model, ctc_a2l_module, ctc_v2l_module, criterion, test=False):
+    def evaluate(model, criterion, test=False):
         model.eval()
         loader = test_loader if test else valid_loader
         total_loss = 0.0
@@ -245,9 +225,9 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
     best_valid = 1e8
     for epoch in range(1, hyp_params.num_epochs+1):
         start = time.time()
-        train_loss = train(model, optimizer, criterion, None, None, None, None, None)
-        val_loss, _, _ = evaluate(model, None, None, criterion, test=False)
-        test_loss, _, _ = evaluate(model, None, None, criterion, test=True)
+        train_loss = train(model, optimizer, criterion)
+        val_loss, _, _ = evaluate(model, criterion, test=False)
+        test_loss, _, _ = evaluate(model, criterion, test=True)
         
         end = time.time()
         duration = end-start
@@ -265,7 +245,7 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
             best_valid = val_loss
 
     model = load_model(hyp_params, name=hyp_params.name)
-    _, results, truths = evaluate(model, ctc_a2l_module, ctc_v2l_module, criterion, test=True)
+    _, results, truths = evaluate(model, criterion, test=True)
     writer.close()
 
     if hyp_params.dataset == "mosei_senti":

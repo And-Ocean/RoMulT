@@ -23,6 +23,9 @@ class DA_Loss(nn.Module):
         h_full = H_full.reshape(H_full.size(0), -1)
         h_miss = H_miss.reshape(H_miss.size(0), -1)
 
+        h_full = torch.nn.functional.normalize(h_full, p=2, dim=1)
+        h_miss = torch.nn.functional.normalize(h_miss, p=2, dim=1)
+
         # Mean difference (1st moment)
         loss = torch.norm(h_full.mean(dim=0) - h_miss.mean(dim=0), p=2)
 

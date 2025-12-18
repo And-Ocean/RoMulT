@@ -6,7 +6,7 @@ from src.dataset import domain_collate_fn
 from src import train
 
 
-parser = argparse.ArgumentParser(description='MOSEI Sentiment Analysis')
+parser = argparse.ArgumentParser(description='IEMOCAP MulT Training')
 parser.add_argument('-f', default='', type=str)
 
 # Fixed
@@ -53,7 +53,7 @@ parser.add_argument('--attn_mask', action='store_false',
 
 # Tuning
 parser.add_argument('--batch_size', type=int, default=64, metavar='N',
-                    help='batch size (default: 24)')
+                    help='batch size (default: 64)')
 parser.add_argument('--clip', type=float, default=0.8,
                     help='gradient clip value (default: 0.8)')
 parser.add_argument('--lr', type=float, default=2e-3,
@@ -78,7 +78,7 @@ parser.add_argument('--name', type=str, default='mult',
                     help='name of the trial (default: "mult")')
 # Domain adaptation
 parser.add_argument('--da_weight', type=float, default=0.1,
-                    help='weight for CMD domain alignment loss (default: 0.0 disables DA)')
+                    help='weight for CMD domain alignment loss (default: 0.1)')
 parser.add_argument('--cmd_k', type=int, default=5,
                     help='number of moments for CMD (default: 5)')
 parser.add_argument('--device', type=int, default=3,
