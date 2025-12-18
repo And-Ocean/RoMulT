@@ -68,6 +68,7 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
         proc_loss, proc_size = 0, 0
         start_time = time.time()
         da_weight = getattr(hyp_params, 'da_weight', 0.1)
+        miss_weight = getattr(hyp_params, 'miss_weight', 1.0)
         da_loss_fn = DA_Loss(n_moments=getattr(hyp_params, 'cmd_k', 5))
         if hyp_params.use_cuda:
             da_loss_fn = da_loss_fn.to(device)
@@ -131,12 +132,15 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
                         reshaped_preds = preds_i.view(-1, 2)              # (B*4, 2)
                         reshaped_labels = eval_attr_i.view(-1)            # (B*4,)
                         cls_loss_i = criterion(reshaped_preds, reshaped_labels) / batch_chunk
+                        miss_cls_loss_i = 0.0
                         if da_weight > 0:
+                            reshaped_preds_miss = preds_miss_i.view(-1, 2)
+                            miss_cls_loss_i = criterion(reshaped_preds_miss, reshaped_labels) / batch_chunk
                             cmd_loss_i = da_loss_fn(features_i.detach(), features_miss_i) / batch_chunk
                         else:
                             cmd_loss_i = 0.0
-                        raw_loss_i = cls_loss_i + da_weight * cmd_loss_i
-                        step_cls += cls_loss_i.item()
+                        raw_loss_i = cls_loss_i + miss_weight * miss_cls_loss_i + da_weight * cmd_loss_i
+                        step_cls += cls_loss_i.item() + miss_weight * (miss_cls_loss_i.item() if torch.is_tensor(miss_cls_loss_i) else float(miss_cls_loss_i))
                         step_cmd += cmd_loss_i.item() if torch.is_tensor(cmd_loss_i) else float(cmd_loss_i)
                     else:
                         raw_loss_i = criterion(preds_i, eval_attr_i) / batch_chunk
@@ -157,9 +161,14 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
                     reshaped_preds = preds.view(-1, 2)              # (B*4, 2)
                     reshaped_labels = eval_attr.view(-1)            # (B*4,)
                     cls_loss = criterion(reshaped_preds, reshaped_labels)
-                    cmd_loss = da_loss_fn(features.detach(), features_miss) if da_weight > 0 else 0.0
-                    raw_loss = cls_loss + da_weight * cmd_loss
-                    step_cls = cls_loss.item()
+                    miss_cls_loss = 0.0
+                    cmd_loss = 0.0
+                    if da_weight > 0:
+                        reshaped_preds_miss = preds_miss.view(-1, 2)
+                        miss_cls_loss = criterion(reshaped_preds_miss, reshaped_labels)
+                        cmd_loss = da_loss_fn(features.detach(), features_miss)
+                    raw_loss = cls_loss + miss_weight * miss_cls_loss + da_weight * cmd_loss
+                    step_cls = cls_loss.item() + miss_weight * (miss_cls_loss.item() if torch.is_tensor(miss_cls_loss) else float(miss_cls_loss))
                     step_cmd = cmd_loss.item() if torch.is_tensor(cmd_loss) else float(cmd_loss)
                 else:
                     raw_loss = criterion(preds, eval_attr)

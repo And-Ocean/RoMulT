@@ -102,11 +102,14 @@ def main():
             raise e
     loader = DataLoader(data, batch_size=args.batch_size, shuffle=False)
 
-    baseline_path = os.path.join("/data/hhy/RoMulT/pre_trained_models", args.baseline_ckpt, ".pt")
-    da_path = os.path.join("/data/hhy/RoMulT/pre_trained_models", args.da_ckpt, ".pt")
+    # If args.* already contains full paths, use them directly; otherwise prepend default dir and ensure .pt suffix.
+    def resolve_path(p):
+        if p.endswith(".pt"):
+            return p
+        return os.path.join("/data/hhy/RoMulT/pre_trained_models", f"{p}.pt")
 
-    baseline = load_model_from_path(baseline_path, device)
-    da_model = load_model_from_path(da_path, device)
+    baseline = load_model_from_path(resolve_path(args.baseline_ckpt), device)
+    da_model = load_model_from_path(resolve_path(args.da_ckpt), device)
 
     combos = ["L", "A", "V", "LA", "LV", "AV", "LAV"]
     rows = []

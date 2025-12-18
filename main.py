@@ -83,6 +83,8 @@ parser.add_argument('--cmd_k', type=int, default=5,
                     help='number of moments for CMD (default: 5)')
 parser.add_argument('--device', type=int, default=3,
                     help='cuda device id to use (default: 3)')
+parser.add_argument('--miss_weight', type=float, default=1.0,
+                    help='weight for missing-domain task loss')
 args = parser.parse_args()
 
 torch.manual_seed(args.seed)
@@ -157,6 +159,7 @@ hyp_params.model = str.upper(args.model.strip())
 hyp_params.output_dim = output_dim_dict.get(dataset, 1)
 hyp_params.criterion = criterion_dict.get(dataset, 'L1Loss')
 hyp_params.device = device
+hyp_params.miss_weight = args.miss_weight
 
 
 if __name__ == '__main__':
