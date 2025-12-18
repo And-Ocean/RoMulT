@@ -17,6 +17,8 @@ from sklearn.metrics import precision_recall_fscore_support
 from sklearn.metrics import accuracy_score, f1_score
 from src.eval_metrics import *
 
+from DA_Loss import DA_Loss
+
 
 ####################################################################
 #
@@ -91,6 +93,10 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
         proc_loss, proc_size = 0, 0
         start_time = time.time()
         da_weight = getattr(hyp_params, 'da_weight', 0.0)
+        da_loss = DA_Loss(tradeoff_angle=getattr(hyp_params, 'da_angle', 0.4),
+                           tradeoff_scale=getattr(hyp_params, 'da_scale', 0.008),
+                           treshold=getattr(hyp_params, 'da_treshold', 0.9),
+                           device=torch.device('cuda' if hyp_params.use_cuda else 'cpu'))
         for i_batch, (batch_X, batch_Y, batch_META) in enumerate(train_loader):
             sample_ind, text, audio, vision = batch_X
             eval_attr = batch_Y.squeeze(-1)   # if num of labels is 1
@@ -154,7 +160,8 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
                         reshaped_labels = eval_attr_i.view(-1)            # (B*4,)
                         cls_loss_i = criterion(reshaped_preds, reshaped_labels) / batch_chunk
                         # TODO: Calculate DA_loss(features_source, features_target) here using features_i.
-                        da_loss_i = 0.0
+                        da_loss_i = calculate_da_loss(features_i_source, features_i_target)
+                        # da_loss_i = 0.0
                         raw_loss_i = cls_loss_i + da_weight * da_loss_i
                     else:
                         raw_loss_i = criterion(preds_i, eval_attr_i) / batch_chunk
@@ -254,9 +261,9 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
         duration = end-start
         scheduler.step(val_loss)    # Decay learning rate by validation loss
 
-        print("-"*50)
+        print("-"*80)
         print('Epoch {:2d} | Time {:5.4f} sec | Valid Loss {:5.4f} | Test Loss {:5.4f}'.format(epoch, duration, val_loss, test_loss))
-        print("-"*50)
+        print("-"*80)
         
         if val_loss < best_valid:
             print(f"Saved model at pre_trained_models/{hyp_params.name}.pt!")

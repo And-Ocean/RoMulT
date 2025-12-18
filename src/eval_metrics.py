@@ -60,7 +60,7 @@ def eval_mosei_senti(results, truths, exclude_zero=False):
 def eval_mosi(results, truths, exclude_zero=False):
     return eval_mosei_senti(results, truths, exclude_zero)
 
-
+# TODO: 加上各个模态组合(L, A, V, LA, LV, AV)下的eval
 def eval_iemocap(results, truths, single=-1):
     emos = ["Neutral", "Happy", "Sad", "Angry"]
     if single < 0:
