@@ -18,7 +18,7 @@ from sklearn.metrics import precision_recall_fscore_support
 from sklearn.metrics import accuracy_score, f1_score
 from src.eval_metrics import *
 
-from DA_Loss import DA_Loss
+from src.DA_Loss import DA_Loss
 
 
 def initiate(hyp_params, train_loader, valid_loader, test_loader):
@@ -86,6 +86,8 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
         da_loss_fn = DA_Loss(n_moments=getattr(hyp_params, 'cmd_k', 5))
         if hyp_params.use_cuda:
             da_loss_fn = da_loss_fn.to(device)
+        epoch_cls_sum = 0.0
+        epoch_cmd_sum = 0.0
         global_step_base = (epoch - 1) * len(train_loader)
         for i_batch, batch in enumerate(tqdm(train_loader, desc=f"Epoch {epoch} Training", leave=False)):
             if da_weight > 0:
@@ -191,11 +193,13 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
             proc_loss += raw_loss.item() * batch_size
             proc_size += batch_size
             epoch_loss += combined_loss.item() * batch_size
-            global_step = global_step_base + i_batch
-            writer.add_scalar("train/cls_loss", step_cls, global_step)
-            writer.add_scalar("train/cmd_loss", step_cmd, global_step)
-            writer.add_scalar("train/raw_loss", raw_loss.item(), global_step)
+            epoch_cls_sum += step_cls * batch_size
+            epoch_cmd_sum += step_cmd * batch_size
                 
+        # Log epoch-level averages
+        denom = max(hyp_params.n_train, 1)
+        writer.add_scalar("train/cls_loss", epoch_cls_sum / denom, epoch)
+        writer.add_scalar("train/cmd_loss", epoch_cmd_sum / denom, epoch)
         return epoch_loss / hyp_params.n_train
 
     def evaluate(model, ctc_a2l_module, ctc_v2l_module, criterion, test=False):

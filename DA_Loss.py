@@ -1,3 +1,3 @@
-from src.DA_Loss import DA_Loss  # re-export for legacy imports
+from src.DA_Loss import DA_Loss
 
 __all__ = ["DA_Loss"]

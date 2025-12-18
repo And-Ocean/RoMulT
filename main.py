@@ -60,10 +60,10 @@ parser.add_argument('--lr', type=float, default=2e-3,
                     help='initial learning rate (default: 1e-3)')
 parser.add_argument('--optim', type=str, default='Adam',
                     help='optimizer to use (default: Adam)')
-parser.add_argument('--num_epochs', type=int, default=40,
-                    help='number of epochs (default: 40)')
-parser.add_argument('--when', type=int, default=20,
-                    help='when to decay learning rate (default: 20)')
+parser.add_argument('--num_epochs', type=int, default=60,
+                    help='number of epochs (default: 60)')
+parser.add_argument('--when', type=int, default=30,
+                    help='when to decay learning rate (default: 30)')
 parser.add_argument('--batch_chunk', type=int, default=1,
                     help='number of chunks per batch (default: 1)')
 
