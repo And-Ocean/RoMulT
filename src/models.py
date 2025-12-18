@@ -16,7 +16,11 @@ class MULTModel(nn.Module):
         self.vonly = hyp_params.vonly
         self.aonly = hyp_params.aonly
         self.lonly = hyp_params.lonly
-        self.num_heads = hyp_params.num_heads
+        # Ensure num_heads divides all attention embed dims (30/60) to avoid runtime assertion.
+        requested_heads = hyp_params.num_heads
+        possible_dims = [self.d_l, self.d_a, self.d_v, 2 * self.d_l, 2 * self.d_a, 2 * self.d_v]
+        valid_heads = [h for h in range(requested_heads, 0, -1) if all(dim % h == 0 for dim in possible_dims)]
+        self.num_heads = valid_heads[0] if valid_heads else 1
         self.layers = hyp_params.layers
         self.attn_dropout = hyp_params.attn_dropout
         self.attn_dropout_a = hyp_params.attn_dropout_a

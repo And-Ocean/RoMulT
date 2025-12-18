@@ -93,7 +93,7 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
         da_weight = getattr(hyp_params, 'da_weight', 0.0)
         for i_batch, (batch_X, batch_Y, batch_META) in enumerate(train_loader):
             sample_ind, text, audio, vision = batch_X
-                eval_attr = batch_Y.squeeze(-1)   # if num of labels is 1
+            eval_attr = batch_Y.squeeze(-1)   # if num of labels is 1
             
             model.zero_grad()
             if ctc_criterion is not None:

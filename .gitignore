@@ -27,3 +27,4 @@
 *.pyc
 *.pyo
 *.pyd
+*.dt

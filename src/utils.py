@@ -22,7 +22,7 @@ def save_load_name(args, name=''):
     elif not args.aligned:
         name = name if len(name) > 0 else 'nonaligned_model'
 
-    return name + '_' + args.model
+    return name
 
 
 def save_model(args, model, name=''):

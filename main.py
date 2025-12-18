@@ -98,13 +98,13 @@ criterion_dict = {
     'iemocap': 'CrossEntropyLoss'
 }
 
-torch.set_default_tensor_type('torch.FloatTensor')
+# Keep default tensors on CPU; move to CUDA explicitly when needed to avoid generator device mismatches.
+torch.set_default_dtype(torch.float32)
 if torch.cuda.is_available():
     if args.no_cuda:
         print("WARNING: You have a CUDA device, so you should probably not run with --no_cuda")
     else:
         torch.cuda.manual_seed(args.seed)
-        torch.set_default_tensor_type('torch.cuda.FloatTensor')
         use_cuda = True
 
 ####################################################################
