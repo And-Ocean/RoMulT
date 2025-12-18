@@ -2,6 +2,7 @@ import torch
 import argparse
 from src.utils import *
 from torch.utils.data import DataLoader
+from src.dataset import domain_collate_fn
 from src import train
 
 
@@ -51,11 +52,11 @@ parser.add_argument('--attn_mask', action='store_false',
                     help='use attention mask for Transformer (default: true)')
 
 # Tuning
-parser.add_argument('--batch_size', type=int, default=24, metavar='N',
+parser.add_argument('--batch_size', type=int, default=64, metavar='N',
                     help='batch size (default: 24)')
 parser.add_argument('--clip', type=float, default=0.8,
                     help='gradient clip value (default: 0.8)')
-parser.add_argument('--lr', type=float, default=1e-3,
+parser.add_argument('--lr', type=float, default=2e-3,
                     help='initial learning rate (default: 1e-3)')
 parser.add_argument('--optim', type=str, default='Adam',
                     help='optimizer to use (default: Adam)')
@@ -75,6 +76,13 @@ parser.add_argument('--no_cuda', action='store_true',
                     help='do not use cuda')
 parser.add_argument('--name', type=str, default='mult',
                     help='name of the trial (default: "mult")')
+# Domain adaptation
+parser.add_argument('--da_weight', type=float, default=0.1,
+                    help='weight for CMD domain alignment loss (default: 0.0 disables DA)')
+parser.add_argument('--cmd_k', type=int, default=5,
+                    help='number of moments for CMD (default: 5)')
+parser.add_argument('--device', type=int, default=3,
+                    help='cuda device id to use (default: 3)')
 args = parser.parse_args()
 
 torch.manual_seed(args.seed)
@@ -87,6 +95,7 @@ elif valid_partial_mode != 1:
     raise ValueError("You can only choose one of {l/v/a}only.")
 
 use_cuda = False
+device = torch.device(f"cuda:{args.device}" if torch.cuda.is_available() and not args.no_cuda else "cpu")
 
 output_dim_dict = {
     'mosi': 1,
@@ -105,6 +114,7 @@ if torch.cuda.is_available():
         print("WARNING: You have a CUDA device, so you should probably not run with --no_cuda")
     else:
         torch.cuda.manual_seed(args.seed)
+        torch.cuda.set_device(device)
         use_cuda = True
 
 ####################################################################
@@ -119,7 +129,8 @@ train_data = get_data(args, dataset, 'train')
 valid_data = get_data(args, dataset, 'valid')
 test_data = get_data(args, dataset, 'test')
    
-train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True)
+collate_fn = domain_collate_fn if args.da_weight > 0 else None
+train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True, collate_fn=collate_fn)
 valid_loader = DataLoader(valid_data, batch_size=args.batch_size, shuffle=True)
 test_loader = DataLoader(test_data, batch_size=args.batch_size, shuffle=True)
 
@@ -145,6 +156,7 @@ hyp_params.n_train, hyp_params.n_valid, hyp_params.n_test = len(train_data), len
 hyp_params.model = str.upper(args.model.strip())
 hyp_params.output_dim = output_dim_dict.get(dataset, 1)
 hyp_params.criterion = criterion_dict.get(dataset, 'L1Loss')
+hyp_params.device = device
 
 
 if __name__ == '__main__':

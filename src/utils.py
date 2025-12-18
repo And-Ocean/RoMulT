@@ -12,7 +12,7 @@ def get_data(args, dataset, split='train'):
         torch.save(data, data_path)
     else:
         print(f"  - Found cached {split} data")
-        data = torch.load(data_path)
+        data = torch.load(data_path, weights_only=False)
     return data
 
 
@@ -32,5 +32,5 @@ def save_model(args, model, name=''):
 
 def load_model(args, name=''):
     name = save_load_name(args, name)
-    model = torch.load(f'pre_trained_models/{name}.pt')
+    model = torch.load(f'pre_trained_models/{name}.pt', weights_only=False)
     return model

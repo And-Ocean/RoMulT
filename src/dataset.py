@@ -4,6 +4,7 @@ import pickle
 import os
 from scipy import signal
 import torch
+import random
 
 # Keep default tensors on CPU; move to CUDA explicitly in training.
 torch.set_default_dtype(torch.float32)
@@ -56,81 +57,54 @@ class Multimodal_Datasets(Dataset):
             Y = torch.argmax(Y, dim=-1).long()
         return X, Y, META        
 
-# TODO: 从其他地方copy来的缺失模态处理方法
-# 六种缺失模态组合，等概率抽取
-_MISSING_CHOICES: Tuple[Tuple[str, ...], ...] = (
+MISSING_COMBOS = [
     ("L",),
     ("A",),
     ("V",),
     ("L", "A"),
     ("L", "V"),
     ("A", "V"),
-)
+]
 
 
-def _stack_batch(batch: Iterable[Tuple[torch.Tensor, ...]]) -> Dict[str, torch.Tensor]:
+def domain_collate_fn(batch):
     """
-    将 TensorDataset 输出的样本列表堆叠成一个 batch 字典。
-    返回的张量均为 CPU tensor，后续在训练循环中再搬到对应设备。
+    Pair each full sample with a miss-domain copy where random modality combinations are zeroed.
     """
-    input_ids, visual, acoustic, input_mask, segment_ids, label_ids = zip(*batch)
+    sample_inds, texts, audios, visions, labels, metas = [], [], [], [], [], []
+    for X, Y, META in batch:
+        sample_ind, text, audio, vision = X
+        sample_inds.append(sample_ind)
+        texts.append(text)
+        audios.append(audio)
+        visions.append(vision)
+        labels.append(Y)
+        metas.append(META)
 
-    visual_tensor = torch.stack(visual, dim=0).float()
-    acoustic_tensor = torch.stack(acoustic, dim=0).float()
+    sample_ind_full = torch.tensor(sample_inds, dtype=torch.long)
+    text_full = torch.stack(texts, dim=0)
+    audio_full = torch.stack(audios, dim=0)
+    vision_full = torch.stack(visions, dim=0)
+    Y_batch = torch.stack(labels, dim=0)
+    META_batch = metas
 
-    # 可用性 mask：1 表示存在该模态，0 表示缺失
-    visual_mask = torch.ones(visual_tensor.shape[:2], dtype=torch.bool)
-    acoustic_mask = torch.ones(acoustic_tensor.shape[:2], dtype=torch.bool)
+    text_miss = text_full.clone()
+    audio_miss = audio_full.clone()
+    vision_miss = vision_full.clone()
+    missing_mask = torch.zeros(len(batch), 3, dtype=torch.bool)  # L, A, V
 
-    return {
-        "input_ids": torch.stack(input_ids, dim=0),
-        "visual": visual_tensor,
-        "acoustic": acoustic_tensor,
-        "attention_mask": torch.stack(input_mask, dim=0),
-        "token_type_ids": torch.stack(segment_ids, dim=0),
-        "labels": torch.stack(label_ids, dim=0).float(),
-        "visual_mask": visual_mask,
-        "acoustic_mask": acoustic_mask,
-    }
+    for i in range(len(batch)):
+        combo = random.choice(MISSING_COMBOS)
+        if "L" in combo:
+            text_miss[i].zero_()
+            missing_mask[i, 0] = True
+        if "A" in combo:
+            audio_miss[i].zero_()
+            missing_mask[i, 1] = True
+        if "V" in combo:
+            vision_miss[i].zero_()
+            missing_mask[i, 2] = True
 
-
-def _apply_missing_modalities(
-    batch: Dict[str, torch.Tensor], pad_token_id: int = 0
-) -> Dict[str, torch.Tensor]:
-    """
-    在给定 batch 上逐样本随机屏蔽模态，返回缺失模态域的 batch。
-
-    缺失策略：
-        - 六种组合 (L, A, V, LA, LV, AV) 均等概率；
-        - 被屏蔽的模态直接置零；
-        - 文本缺失时，input_ids / attention_mask / token_type_ids 全部置为 padding。
-    """
-    missing = {k: (v.clone() if k != "labels" else v) for k, v in batch.items()}
-    batch_size = missing["labels"].size(0)
-
-    for idx in range(batch_size):
-        keep_modalities = set(random.choice(_MISSING_CHOICES))
-
-        if "L" not in keep_modalities:
-            missing["input_ids"][idx].fill_(pad_token_id)
-            missing["attention_mask"][idx].zero_()
-            missing["token_type_ids"][idx].zero_()
-
-        if "A" not in keep_modalities:
-            missing["acoustic"][idx].zero_()
-            missing["acoustic_mask"][idx].zero_()
-
-        if "V" not in keep_modalities:
-            missing["visual"][idx].zero_()
-            missing["visual_mask"][idx].zero_()
-
-    return missing
-
-
-def domain_collate_fn(batch: List[Tuple[torch.Tensor, ...]]) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
-    """
-    新版：同一批样本复制一份，直接在拷贝上随机屏蔽模态生成缺失域。
-    """
-    full_batch = _stack_batch(batch)
-    missing_batch = _apply_missing_modalities(full_batch, pad_token_id=0)
-    return full_batch, missing_batch
+    batch_X_full = (sample_ind_full, text_full, audio_full, vision_full)
+    batch_X_miss = (sample_ind_full, text_miss, audio_miss, vision_miss)
+    return batch_X_full, batch_X_miss, Y_batch, META_batch, missing_mask
