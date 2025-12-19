@@ -118,10 +118,10 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
             use_dp = hyp_params.use_cuda and batch_size > 10 and torch.cuda.device_count() > 1
             net = nn.DataParallel(model, device_ids=device_ids, output_device=device_idx) if use_dp else model
 
-            do_da = da_weight > 0 and batch_size >= 2
+            do_robust = (da_weight > 0 or miss_weight > 0) and batch_size >= 2
             step_cmd = 0.0
 
-            if do_da:
+            if do_robust:
                 half = batch_size // 2
                 text_full, audio_full, vision_full = text[:half], audio[:half], vision[:half]
                 target_full = eval_attr[:half]
@@ -149,14 +149,17 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
                 step_cls = cls_loss.item()
 
                 total_loss = cls_loss
-                if do_da:
+                if do_robust:
                     reshaped_preds_miss = preds_miss.view(-1, 2)
                     target_miss_flat = target_miss.view(-1)
                     cls_loss_miss = criterion(reshaped_preds_miss, target_miss_flat)
-                    cmd_loss = da_loss_fn(feat_full.detach(), feat_miss)
+                    cmd_loss = torch.tensor(0.0, device=device)
+                    if da_weight > 0:
+                        cmd_loss = da_loss_fn(feat_full.detach(), feat_miss)
                     total_loss = total_loss + miss_weight * cls_loss_miss + da_weight * cmd_loss
                     step_cls += miss_weight * cls_loss_miss.item()
-                    step_cmd = cmd_loss.item()
+                    if da_weight > 0:
+                        step_cmd = cmd_loss.item()
             else:
                 total_loss = criterion(preds_full, target_full)
                 step_cls = total_loss.item()
