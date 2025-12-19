@@ -31,18 +31,40 @@ MISSING_COMBOS = [
 ]
 
 
-def apply_random_mask(text, audio, vision):
+def apply_random_mask(text, audio, vision, per_sample=True, return_mask=False):
     """
     Apply a random missing-modality mask to the given batch tensors.
     """
-    combo = random.choice(MISSING_COMBOS)
     t_m, a_m, v_m = text.clone(), audio.clone(), vision.clone()
-    if "L" in combo:
-        t_m.zero_()
-    if "A" in combo:
-        a_m.zero_()
-    if "V" in combo:
-        v_m.zero_()
+    batch_size = t_m.size(0)
+    mask = torch.zeros(batch_size, 3, dtype=torch.bool, device=text.device)
+
+    if per_sample:
+        for i in range(batch_size):
+            combo = random.choice(MISSING_COMBOS)
+            if "L" in combo:
+                t_m[i].zero_()
+                mask[i, 0] = True
+            if "A" in combo:
+                a_m[i].zero_()
+                mask[i, 1] = True
+            if "V" in combo:
+                v_m[i].zero_()
+                mask[i, 2] = True
+    else:
+        combo = random.choice(MISSING_COMBOS)
+        if "L" in combo:
+            t_m.zero_()
+            mask[:, 0] = True
+        if "A" in combo:
+            a_m.zero_()
+            mask[:, 1] = True
+        if "V" in combo:
+            v_m.zero_()
+            mask[:, 2] = True
+
+    if return_mask:
+        return t_m, a_m, v_m, mask
     return t_m, a_m, v_m
 
 
@@ -128,7 +150,9 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
 
                 text_miss_raw, audio_miss_raw, vision_miss_raw = text[half:], audio[half:], vision[half:]
                 target_miss = eval_attr[half:]
-                text_miss, audio_miss, vision_miss = apply_random_mask(text_miss_raw, audio_miss_raw, vision_miss_raw)
+                text_miss, audio_miss, vision_miss, miss_mask = apply_random_mask(
+                    text_miss_raw, audio_miss_raw, vision_miss_raw, per_sample=True, return_mask=True
+                )
 
                 text_in = torch.cat([text_full, text_miss], dim=0)
                 audio_in = torch.cat([audio_full, audio_miss], dim=0)
@@ -218,6 +242,8 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
 
         results = torch.cat(results)
         truths = torch.cat(truths)
+        if hyp_params.dataset == 'iemocap' and getattr(hyp_params, "diagnostics", False):
+            eval_iemocap_diagnostics(results, truths, prefix="test/" if test else "val/")
         return avg_loss, results, truths
 
     best_valid = 1e8

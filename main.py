@@ -84,6 +84,8 @@ parser.add_argument('--device', type=int, default=3,
                     help='cuda device id to use (default: 3)')
 parser.add_argument('--miss_weight', type=float, default=1.0,
                     help='weight for missing-domain task loss')
+parser.add_argument('--diagnostics', action='store_true',
+                    help='enable per-emotion diagnostics for IEMOCAP')
 args = parser.parse_args()
 
 torch.manual_seed(args.seed)
@@ -163,6 +165,7 @@ hyp_params.output_dim = output_dim_dict.get(dataset, 1)
 hyp_params.criterion = criterion_dict.get(dataset, 'L1Loss')
 hyp_params.device = device
 hyp_params.miss_weight = args.miss_weight
+hyp_params.diagnostics = args.diagnostics
 
 
 if __name__ == '__main__':

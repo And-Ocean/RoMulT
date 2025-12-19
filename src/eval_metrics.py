@@ -4,6 +4,7 @@ from sklearn.metrics import classification_report
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import precision_recall_fscore_support
 from sklearn.metrics import accuracy_score, f1_score
+import torch.nn.functional as F
 
 
 def multiclass_acc(preds, truths):
@@ -86,5 +87,49 @@ def eval_iemocap(results, truths, single=-1):
         print("  - F1 Score: ", f1)
         print("  - Accuracy: ", acc)
 
+
+def eval_iemocap_diagnostics(results, truths, prefix="", return_dict=False):
+    """
+    Print per-emotion accuracy, F1, confusion matrix, and average logits/probabilities.
+    results: (N*4,2) or (N,4,2)
+    truths: (N*4,) or (N,4)
+    """
+    emotions = ["happy", "sad", "angry", "neutral"]
+    R = results.view(-1, 4, 2)
+    T = truths.view(-1, 4)
+    out = {}
+    for idx, emo in enumerate(emotions):
+        logits = R[:, idx, :]
+        y_true = T[:, idx]
+        y_pred = torch.argmax(logits, dim=-1)
+
+        acc = accuracy_score(y_true.cpu(), y_pred.cpu())
+        f1 = f1_score(y_true.cpu(), y_pred.cpu(), average="weighted")
+        cm = confusion_matrix(y_true.cpu(), y_pred.cpu(), labels=[0, 1])
+
+        probs = F.softmax(logits, dim=-1)[:, 1]
+        mean_p1 = probs.mean().item()
+        pos_mask = y_true == 1
+        neg_mask = y_true == 0
+        mean_p1_pos = probs[pos_mask].mean().item() if pos_mask.any() else float("nan")
+        mean_p1_neg = probs[neg_mask].mean().item() if neg_mask.any() else float("nan")
+        mean_margin = (logits[:, 1] - logits[:, 0]).mean().item()
+
+        print(f"{prefix}{emo}: acc={acc:.4f} | f1={f1:.4f}")
+        print(f"  Confusion [ [TN FP], [FN TP] ]: {cm.tolist()}")
+        print(f"  mean_p1={mean_p1:.4f}, mean_p1_pos={mean_p1_pos:.4f}, mean_p1_neg={mean_p1_neg:.4f}, mean_margin={mean_margin:.4f}")
+
+        if return_dict:
+            out[emo] = {
+                "acc": acc,
+                "f1": f1,
+                "confusion": cm.tolist(),
+                "mean_p1": mean_p1,
+                "mean_p1_pos": mean_p1_pos,
+                "mean_p1_neg": mean_p1_neg,
+                "mean_margin": mean_margin,
+            }
+    if return_dict:
+        return out
 
 
