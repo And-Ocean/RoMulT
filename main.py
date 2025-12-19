@@ -2,7 +2,6 @@ import torch
 import argparse
 from src.utils import *
 from torch.utils.data import DataLoader
-from src.dataset import domain_collate_fn
 from src import train
 
 
@@ -131,7 +130,7 @@ train_data = get_data(args, dataset, 'train')
 valid_data = get_data(args, dataset, 'valid')
 test_data = get_data(args, dataset, 'test')
    
-collate_fn = domain_collate_fn if args.da_weight > 0 else None
+collate_fn = None
 loader_workers = 4
 train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True, collate_fn=collate_fn,
                           num_workers=loader_workers, pin_memory=use_cuda)

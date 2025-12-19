@@ -23,6 +23,10 @@ class DA_Loss(nn.Module):
         h_full = H_full.reshape(H_full.size(0), -1)
         h_miss = H_miss.reshape(H_miss.size(0), -1)
 
+        # L2 normalize to focus CMD on distribution shape rather than scale.
+        h_full = torch.nn.functional.normalize(h_full, p=2, dim=1)
+        h_miss = torch.nn.functional.normalize(h_miss, p=2, dim=1)
+
         h_full = torch.nn.functional.normalize(h_full, p=2, dim=1)
         h_miss = torch.nn.functional.normalize(h_miss, p=2, dim=1)
 

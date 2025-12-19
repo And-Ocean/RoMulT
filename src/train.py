@@ -11,6 +11,7 @@ import os
 import pickle
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+import random
 
 from sklearn.metrics import classification_report
 from sklearn.metrics import confusion_matrix
@@ -19,6 +20,30 @@ from sklearn.metrics import accuracy_score, f1_score
 from src.eval_metrics import *
 
 from src.DA_Loss import DA_Loss
+
+MISSING_COMBOS = [
+    ("L",),
+    ("A",),
+    ("V",),
+    ("L", "A"),
+    ("L", "V"),
+    ("A", "V"),
+]
+
+
+def apply_random_mask(text, audio, vision):
+    """
+    Apply a random missing-modality mask to the given batch tensors.
+    """
+    combo = random.choice(MISSING_COMBOS)
+    t_m, a_m, v_m = text.clone(), audio.clone(), vision.clone()
+    if "L" in combo:
+        t_m.zero_()
+    if "A" in combo:
+        a_m.zero_()
+    if "V" in combo:
+        v_m.zero_()
+    return t_m, a_m, v_m
 
 
 def initiate(hyp_params, train_loader, valid_loader, test_loader):
@@ -74,119 +99,78 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
             da_loss_fn = da_loss_fn.to(device)
         epoch_cls_sum = 0.0
         epoch_cmd_sum = 0.0
-        global_step_base = (epoch - 1) * len(train_loader)
         for i_batch, batch in enumerate(tqdm(train_loader, desc=f"Epoch {epoch} Training", leave=False)):
-            if da_weight > 0:
-                batch_X_full, batch_X_miss, batch_Y, batch_META, missing_mask = batch
-                _, text_miss, audio_miss, vision_miss = batch_X_miss
-            else:
-                batch_X_full, batch_Y, batch_META = batch
-                text_miss = audio_miss = vision_miss = None
-                missing_mask = None
+            batch_X, batch_Y, batch_META = batch
+            sample_ind, text, audio, vision = batch_X
+            eval_attr = batch_Y.squeeze(-1)
 
-            sample_ind, text_full, audio_full, vision_full = batch_X_full
-            eval_attr = batch_Y.squeeze(-1) 
-            
             model.zero_grad()
-                
+
             if hyp_params.use_cuda:
-                text_full = text_full.to(device)
-                audio_full = audio_full.to(device)
-                vision_full = vision_full.to(device)
+                text = text.to(device)
+                audio = audio.to(device)
+                vision = vision.to(device)
                 eval_attr = eval_attr.to(device)
-                if da_weight > 0:
-                    text_miss = text_miss.to(device)
-                    audio_miss = audio_miss.to(device)
-                    vision_miss = vision_miss.to(device)
-                    if missing_mask is not None:
-                        missing_mask = missing_mask.to(device)
                 if hyp_params.dataset == 'iemocap':
                     eval_attr = eval_attr.long()
-            
-            batch_size = text_full.size(0)
-            batch_chunk = hyp_params.batch_chunk
-                            
-            combined_loss = 0
+
+            batch_size = text.size(0)
             use_dp = hyp_params.use_cuda and batch_size > 10 and torch.cuda.device_count() > 1
             net = nn.DataParallel(model, device_ids=device_ids, output_device=device_idx) if use_dp else model
-            step_cls = 0.0
+
+            do_da = da_weight > 0 and batch_size >= 2
             step_cmd = 0.0
-            if batch_chunk > 1:
-                raw_loss = combined_loss = 0
-                text_chunks = text_full.chunk(batch_chunk, dim=0)
-                audio_chunks = audio_full.chunk(batch_chunk, dim=0)
-                vision_chunks = vision_full.chunk(batch_chunk, dim=0)
-                eval_attr_chunks = eval_attr.chunk(batch_chunk, dim=0)
-                if da_weight > 0:
-                    text_miss_chunks = text_miss.chunk(batch_chunk, dim=0)
-                    audio_miss_chunks = audio_miss.chunk(batch_chunk, dim=0)
-                    vision_miss_chunks = vision_miss.chunk(batch_chunk, dim=0)
-                
-                for i in range(batch_chunk):
-                    text_i, audio_i, vision_i = text_chunks[i], audio_chunks[i], vision_chunks[i]
-                    eval_attr_i = eval_attr_chunks[i]
-                    preds_i, features_i = net(text_i, audio_i, vision_i)
-                    if da_weight > 0:
-                        preds_miss_i, features_miss_i = net(text_miss_chunks[i], audio_miss_chunks[i], vision_miss_chunks[i])
 
-                    if hyp_params.dataset == 'iemocap':
-                        reshaped_preds = preds_i.view(-1, 2)              # (B*4, 2)
-                        reshaped_labels = eval_attr_i.view(-1)            # (B*4,)
-                        cls_loss_i = criterion(reshaped_preds, reshaped_labels) / batch_chunk
-                        miss_cls_loss_i = 0.0
-                        if da_weight > 0:
-                            reshaped_preds_miss = preds_miss_i.view(-1, 2)
-                            miss_cls_loss_i = criterion(reshaped_preds_miss, reshaped_labels) / batch_chunk
-                            cmd_loss_i = da_loss_fn(features_i.detach(), features_miss_i) / batch_chunk
-                        else:
-                            cmd_loss_i = 0.0
-                        raw_loss_i = cls_loss_i + miss_weight * miss_cls_loss_i + da_weight * cmd_loss_i
-                        step_cls += cls_loss_i.item() + miss_weight * (miss_cls_loss_i.item() if torch.is_tensor(miss_cls_loss_i) else float(miss_cls_loss_i))
-                        step_cmd += cmd_loss_i.item() if torch.is_tensor(cmd_loss_i) else float(cmd_loss_i)
-                    else:
-                        raw_loss_i = criterion(preds_i, eval_attr_i) / batch_chunk
-                        step_cls += raw_loss_i.item()
+            if do_da:
+                half = batch_size // 2
+                text_full, audio_full, vision_full = text[:half], audio[:half], vision[:half]
+                target_full = eval_attr[:half]
 
-                    raw_loss += raw_loss_i
-                    raw_loss_i.backward()
-                ctc_loss.backward()
-                combined_loss = raw_loss + ctc_loss
-                if batch_chunk > 0:
-                    step_cls /= batch_chunk
-                    step_cmd /= batch_chunk
+                text_miss_raw, audio_miss_raw, vision_miss_raw = text[half:], audio[half:], vision[half:]
+                target_miss = eval_attr[half:]
+                text_miss, audio_miss, vision_miss = apply_random_mask(text_miss_raw, audio_miss_raw, vision_miss_raw)
+
+                text_in = torch.cat([text_full, text_miss], dim=0)
+                audio_in = torch.cat([audio_full, audio_miss], dim=0)
+                vision_in = torch.cat([vision_full, vision_miss], dim=0)
+
+                preds, features = net(text_in, audio_in, vision_in)
+                preds_full, preds_miss = preds[:half], preds[half:]
+                feat_full, feat_miss = features[:half], features[half:]
             else:
-                preds, features = net(text_full, audio_full, vision_full)
-                if da_weight > 0:
-                    preds_miss, features_miss = net(text_miss, audio_miss, vision_miss)
-                if hyp_params.dataset == 'iemocap':
-                    reshaped_preds = preds.view(-1, 2)              # (B*4, 2)
-                    reshaped_labels = eval_attr.view(-1)            # (B*4,)
-                    cls_loss = criterion(reshaped_preds, reshaped_labels)
-                    miss_cls_loss = 0.0
-                    cmd_loss = 0.0
-                    if da_weight > 0:
-                        reshaped_preds_miss = preds_miss.view(-1, 2)
-                        miss_cls_loss = criterion(reshaped_preds_miss, reshaped_labels)
-                        cmd_loss = da_loss_fn(features.detach(), features_miss)
-                    raw_loss = cls_loss + miss_weight * miss_cls_loss + da_weight * cmd_loss
-                    step_cls = cls_loss.item() + miss_weight * (miss_cls_loss.item() if torch.is_tensor(miss_cls_loss) else float(miss_cls_loss))
-                    step_cmd = cmd_loss.item() if torch.is_tensor(cmd_loss) else float(cmd_loss)
-                else:
-                    raw_loss = criterion(preds, eval_attr)
-                    step_cls = raw_loss.item()
-                combined_loss = raw_loss
-                combined_loss.backward()
-            
+                preds_full, feat_full = net(text, audio, vision)
+                preds_miss = feat_miss = None
+                target_full = eval_attr
+
+            if hyp_params.dataset == 'iemocap':
+                reshaped_preds_full = preds_full.view(-1, 2)
+                target_full_flat = target_full.view(-1)
+                cls_loss = criterion(reshaped_preds_full, target_full_flat)
+                step_cls = cls_loss.item()
+
+                total_loss = cls_loss
+                if do_da:
+                    reshaped_preds_miss = preds_miss.view(-1, 2)
+                    target_miss_flat = target_miss.view(-1)
+                    cls_loss_miss = criterion(reshaped_preds_miss, target_miss_flat)
+                    cmd_loss = da_loss_fn(feat_full.detach(), feat_miss)
+                    total_loss = total_loss + miss_weight * cls_loss_miss + da_weight * cmd_loss
+                    step_cls += miss_weight * cls_loss_miss.item()
+                    step_cmd = cmd_loss.item()
+            else:
+                total_loss = criterion(preds_full, target_full)
+                step_cls = total_loss.item()
+
+            total_loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), hyp_params.clip)
             optimizer.step()
-            
-            proc_loss += raw_loss.item() * batch_size
+
+            proc_loss += total_loss.item() * batch_size
             proc_size += batch_size
-            epoch_loss += combined_loss.item() * batch_size
+            epoch_loss += total_loss.item() * batch_size
             epoch_cls_sum += step_cls * batch_size
             epoch_cmd_sum += step_cmd * batch_size
-                
-        # Log epoch-level averages
+
         denom = max(hyp_params.n_train, 1)
         writer.add_scalar("train/cls_loss", epoch_cls_sum / denom, epoch)
         writer.add_scalar("train/cmd_loss", epoch_cmd_sum / denom, epoch)

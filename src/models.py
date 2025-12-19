@@ -12,7 +12,8 @@ class MULTModel(nn.Module):
         """
         super(MULTModel, self).__init__()
         self.orig_d_l, self.orig_d_a, self.orig_d_v = hyp_params.orig_d_l, hyp_params.orig_d_a, hyp_params.orig_d_v
-        self.d_l, self.d_a, self.d_v = 30, 30, 30
+        # Bump feature dims to reduce bottleneck risk.
+        self.d_l, self.d_a, self.d_v = 64, 64, 64
         self.vonly = hyp_params.vonly
         self.aonly = hyp_params.aonly
         self.lonly = hyp_params.lonly
@@ -112,8 +113,8 @@ class MULTModel(nn.Module):
 
         if self.lonly:
             # (V,A) --> L
-            h_l_with_as = self.trans_l_with_a(proj_x_l, proj_x_a, proj_x_a)    # Dimension (L, N, d_l)
-            h_l_with_vs = self.trans_l_with_v(proj_x_l, proj_x_v, proj_x_v)    # Dimension (L, N, d_l)
+            h_l_with_as = self.trans_l_with_a(proj_x_l, proj_x_a, proj_x_a) + proj_x_l   # Dimension (L, N, d_l)
+            h_l_with_vs = self.trans_l_with_v(proj_x_l, proj_x_v, proj_x_v) + proj_x_l   # Dimension (L, N, d_l)
             h_ls = torch.cat([h_l_with_as, h_l_with_vs], dim=2)
             h_ls = self.trans_l_mem(h_ls)
             if type(h_ls) == tuple:
@@ -122,8 +123,8 @@ class MULTModel(nn.Module):
 
         if self.aonly:
             # (L,V) --> A
-            h_a_with_ls = self.trans_a_with_l(proj_x_a, proj_x_l, proj_x_l)
-            h_a_with_vs = self.trans_a_with_v(proj_x_a, proj_x_v, proj_x_v)
+            h_a_with_ls = self.trans_a_with_l(proj_x_a, proj_x_l, proj_x_l) + proj_x_a
+            h_a_with_vs = self.trans_a_with_v(proj_x_a, proj_x_v, proj_x_v) + proj_x_a
             h_as = torch.cat([h_a_with_ls, h_a_with_vs], dim=2)
             h_as = self.trans_a_mem(h_as)
             if type(h_as) == tuple:
@@ -132,8 +133,8 @@ class MULTModel(nn.Module):
 
         if self.vonly:
             # (L,A) --> V
-            h_v_with_ls = self.trans_v_with_l(proj_x_v, proj_x_l, proj_x_l)
-            h_v_with_as = self.trans_v_with_a(proj_x_v, proj_x_a, proj_x_a)
+            h_v_with_ls = self.trans_v_with_l(proj_x_v, proj_x_l, proj_x_l) + proj_x_v
+            h_v_with_as = self.trans_v_with_a(proj_x_v, proj_x_a, proj_x_a) + proj_x_v
             h_vs = torch.cat([h_v_with_ls, h_v_with_as], dim=2)
             h_vs = self.trans_v_mem(h_vs)
             if type(h_vs) == tuple:
