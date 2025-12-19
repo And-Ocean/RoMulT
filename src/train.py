@@ -107,7 +107,8 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
             batch_chunk = hyp_params.batch_chunk
                             
             combined_loss = 0
-            net = nn.DataParallel(model, device_ids=device_ids, output_device=device_idx) if batch_size > 10 and hyp_params.use_cuda else model
+            use_dp = hyp_params.use_cuda and batch_size > 10 and torch.cuda.device_count() > 1
+            net = nn.DataParallel(model, device_ids=device_ids, output_device=device_idx) if use_dp else model
             step_cls = 0.0
             step_cmd = 0.0
             if batch_chunk > 1:
@@ -214,7 +215,8 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
                         
                 batch_size = text.size(0)
                 
-                net = nn.DataParallel(model, device_ids=device_ids, output_device=device_idx) if batch_size > 10 and hyp_params.use_cuda else model
+                use_dp = hyp_params.use_cuda and batch_size > 10 and torch.cuda.device_count() > 1
+                net = nn.DataParallel(model, device_ids=device_ids, output_device=device_idx) if use_dp else model
                 preds, _ = net(text, audio, vision)
                 if hyp_params.dataset == 'iemocap':
                     preds = preds.view(-1, 2)              # (B*4, 2)

@@ -95,13 +95,13 @@ def domain_collate_fn(batch):
 
     for i in range(len(batch)):
         combo = random.choice(MISSING_COMBOS)
-        if "L" in combo:
+        if "L" not in combo:
             text_miss[i].zero_()
             missing_mask[i, 0] = True
-        if "A" in combo:
+        if "A" not in combo:
             audio_miss[i].zero_()
             missing_mask[i, 1] = True
-        if "V" in combo:
+        if "V" not in combo:
             vision_miss[i].zero_()
             missing_mask[i, 2] = True
 

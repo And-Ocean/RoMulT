@@ -132,9 +132,13 @@ valid_data = get_data(args, dataset, 'valid')
 test_data = get_data(args, dataset, 'test')
    
 collate_fn = domain_collate_fn if args.da_weight > 0 else None
-train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True, collate_fn=collate_fn)
-valid_loader = DataLoader(valid_data, batch_size=args.batch_size, shuffle=True)
-test_loader = DataLoader(test_data, batch_size=args.batch_size, shuffle=True)
+loader_workers = 4
+train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True, collate_fn=collate_fn,
+                          num_workers=loader_workers, pin_memory=use_cuda)
+valid_loader = DataLoader(valid_data, batch_size=args.batch_size, shuffle=True,
+                          num_workers=loader_workers, pin_memory=use_cuda)
+test_loader = DataLoader(test_data, batch_size=args.batch_size, shuffle=True,
+                         num_workers=loader_workers, pin_memory=use_cuda)
 
 print('Finish loading the data....')
 if not args.aligned:
