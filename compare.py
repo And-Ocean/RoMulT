@@ -7,6 +7,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from sklearn.metrics import accuracy_score, f1_score
+import matplotlib.pyplot as plt
 
 from src.utils import get_data
 
@@ -77,7 +78,7 @@ def main():
     parser.add_argument("--baseline_ckpt", type=str, default="baseline")
     parser.add_argument("--da_ckpt", type=str, default="da")
     parser.add_argument("--split", type=str, default="test", choices=["train", "valid", "test"])
-    parser.add_argument("--out_csv", type=str, default="RoMulT/csv", help="optional path to save csv results")
+    parser.add_argument("--out_csv", type=str, default="result/csv/", help="optional path to save csv results")
     parser.add_argument("--device", type=int, default=0, help="cuda device id to use (default: 0)")
     args = parser.parse_args()
 
@@ -121,12 +122,64 @@ def main():
         print(f"{combo:4s} | {base_acc:.4f} | {base_f1:.4f} | {da_acc:.4f} | {da_f1:.4f} | {da_acc - base_acc:+.4f} | {da_f1 - base_f1:+.4f}")
 
     if args.out_csv:
-        os.makedirs(os.path.dirname(args.out_csv), exist_ok=True)
-        with open(args.out_csv, "w", newline="") as f:
+        out_dir = args.out_csv
+        os.makedirs(out_dir, exist_ok=True)
+        csv_path = os.path.join(out_dir, f"{args.baseline_ckpt}_{args.da_ckpt}.csv")
+        with open(csv_path, "w", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(["combo", "base_acc", "base_f1", "da_acc", "da_f1", "acc_delta", "f1_delta"])
             for row in rows:
                 writer.writerow(row)
+
+    # Visualization: bar plots for acc and f1
+    png_dir = "/data/hhy/RoMulT/result/png"
+    os.makedirs(png_dir, exist_ok=True)
+    combos_labels = [r[0] for r in rows]
+    base_accs = [r[1] for r in rows]
+    da_accs = [r[3] for r in rows]
+    base_f1s = [r[2] for r in rows]
+    da_f1s = [r[4] for r in rows]
+
+    x = range(len(combos_labels))
+    width = 0.35
+
+    # Accuracy plot
+    plt.figure(figsize=(10, 5))
+    bars_base = plt.bar([i - width/2 for i in x], base_accs, width=width, label="baseline_acc")
+    bars_da = plt.bar([i + width/2 for i in x], da_accs, width=width, label="da_acc")
+    plt.xticks(x, combos_labels)
+    plt.ylabel("Accuracy")
+    plt.title("Accuracy comparison")
+    plt.legend()
+    for bar in bars_base:
+        height = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2, height, f"{height:.3f}", ha="center", va="bottom", fontsize=8)
+    for bar in bars_da:
+        height = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2, height, f"{height:.3f}", ha="center", va="bottom", fontsize=8)
+    acc_path = os.path.join(png_dir, f"{args.baseline_ckpt}_{args.da_ckpt}_acc.png")
+    plt.tight_layout()
+    plt.savefig(acc_path)
+    plt.close()
+
+    # F1 plot
+    plt.figure(figsize=(10, 5))
+    bars_base_f1 = plt.bar([i - width/2 for i in x], base_f1s, width=width, label="baseline_f1")
+    bars_da_f1 = plt.bar([i + width/2 for i in x], da_f1s, width=width, label="da_f1")
+    plt.xticks(x, combos_labels)
+    plt.ylabel("Weighted F1")
+    plt.title("Weighted F1 comparison")
+    plt.legend()
+    for bar in bars_base_f1:
+        height = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2, height, f"{height:.3f}", ha="center", va="bottom", fontsize=8)
+    for bar in bars_da_f1:
+        height = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2, height, f"{height:.3f}", ha="center", va="bottom", fontsize=8)
+    f1_path = os.path.join(png_dir, f"{args.baseline_ckpt}_{args.da_ckpt}_f1.png")
+    plt.tight_layout()
+    plt.savefig(f1_path)
+    plt.close()
 
 
 if __name__ == "__main__":
