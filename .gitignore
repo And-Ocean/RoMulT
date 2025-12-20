@@ -30,3 +30,7 @@
 *.dt
 
 /runs
+/__pycache__/
+
+*.png
+*.csv 
