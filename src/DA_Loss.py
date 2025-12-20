@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 
-class DA_Loss(nn.Module):
+class CMD_Loss(nn.Module):
     """
     Central Moment Discrepancy (CMD) for aligning full/missing domain features.
     """

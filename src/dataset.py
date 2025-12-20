@@ -52,12 +52,5 @@ class Multimodal_Datasets(Dataset):
         if self.data == 'mosi':
             META = (self.meta[index][0].decode('UTF-8'), self.meta[index][1].decode('UTF-8'), self.meta[index][2].decode('UTF-8'))
         if self.data == 'iemocap':
-            # Ensure per-emotion binary targets of shape (4,)
-            if Y.dim() >= 2 and Y.size(-1) == 2:
-                # Original labels are one-hot/logits per emotion -> collapse to 0/1
-                Y = torch.argmax(Y, dim=-1).long()
-            elif Y.dim() >= 2 and Y.size(-1) == 1:
-                Y = Y.squeeze(-1).long()
-            else:
-                Y = (Y > 0.5).long()
+            Y = torch.argmax(Y, dim=-1).long()
         return X, Y, META        
