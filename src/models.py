@@ -150,4 +150,4 @@ class MULTModel(nn.Module):
         
         output = self.out_layer(last_hs_proj)
         # Return both logits and fused features to enable auxiliary DA losses.
-        return output, last_hs
+        return output, last_hs_proj

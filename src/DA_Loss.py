@@ -35,3 +35,49 @@ class CMD_Loss(nn.Module):
             loss = loss + self._moment_diff(h_full, h_miss, k)
 
         return loss
+
+
+class SWD_Loss(nn.Module):
+    """
+    Sliced Wasserstein Discrepancy (SWD) for aligning full/missing domain features.
+    """
+
+    def __init__(self, num_projections: int = 128, p: int = 2):
+        super().__init__()
+        if not isinstance(num_projections, int) or num_projections <= 0:
+            raise ValueError(f"num_projections must be a positive integer, got {num_projections}")
+        if not isinstance(p, int) or p <= 0:
+            raise ValueError(f"p must be a positive integer, got {p}")
+        self.num_projections = num_projections
+        self.p = p
+
+    def forward(self, H_full: torch.Tensor, H_miss: torch.Tensor) -> torch.Tensor:
+        # Flatten to (B, D)
+        h_full = H_full.reshape(H_full.size(0), -1)
+        h_miss = H_miss.reshape(H_miss.size(0), -1)
+
+        # Check batch size consistency
+        if h_full.size(0) != h_miss.size(0):
+            raise ValueError(f"Batch sizes must match for SWD: {h_full.size(0)} vs {h_miss.size(0)}")
+
+        # L2 normalize features
+        h_full = torch.nn.functional.normalize(h_full, p=2, dim=1)
+        h_miss = torch.nn.functional.normalize(h_miss, p=2, dim=1)
+
+        B, D = h_full.size()
+
+        # Random projections (D, num_projections)
+        theta = torch.randn(D, self.num_projections, device=h_full.device, dtype=h_full.dtype)
+        theta = torch.nn.functional.normalize(theta, p=2, dim=0)
+
+        proj_full = h_full @ theta  # (B, P)
+        proj_miss = h_miss @ theta  # (B, P)
+
+        proj_full_sorted, _ = torch.sort(proj_full, dim=0)
+        proj_miss_sorted, _ = torch.sort(proj_miss, dim=0)
+
+        diff = torch.abs(proj_full_sorted - proj_miss_sorted)
+        dist = diff if self.p == 1 else diff ** self.p
+
+        loss = dist.mean()
+        return loss

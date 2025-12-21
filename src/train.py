@@ -19,7 +19,7 @@ from sklearn.metrics import precision_recall_fscore_support
 from sklearn.metrics import accuracy_score, f1_score
 from src.eval_metrics import *
 
-from src.DA_Loss import CMD_Loss
+from src.DA_Loss import CMD_Loss, SWD_Loss
 
 KEEP_COMBOS = [
     ("L",),
@@ -116,7 +116,8 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
         start_time = time.time()
         da_weight = getattr(hyp_params, 'da_weight', 0.1)
         miss_weight = getattr(hyp_params, 'miss_weight', 1.0)
-        da_loss_fn = CMD_Loss(n_moments=getattr(hyp_params, 'cmd_k', 5))
+        # da_loss_fn = CMD_Loss(n_moments=getattr(hyp_params, 'cmd_k', 5))
+        da_loss_fn = SWD_Loss(num_projections = 128, p=2)
         if hyp_params.use_cuda:
             da_loss_fn = da_loss_fn.to(device)
         epoch_cls_sum = 0.0
