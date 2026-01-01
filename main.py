@@ -13,11 +13,11 @@ parser.add_argument('--model', type=str, default='MulT',
                     help='name of the model to use (Transformer, etc.)')
 
 # Tasks
-parser.add_argument('--vonly', action='store_true',
+parser.add_argument('--vonly', action='store_true', default=False,
                     help='use the crossmodal fusion into v (default: False)')
-parser.add_argument('--aonly', action='store_true',
+parser.add_argument('--aonly', action='store_true', default=False,
                     help='use the crossmodal fusion into a (default: False)')
-parser.add_argument('--lonly', action='store_true',
+parser.add_argument('--lonly', action='store_true', default=False,
                     help='use the crossmodal fusion into l (default: False)')
 parser.add_argument('--aligned', action='store_true', default=True,
                     help='consider aligned experiment or not (default: True for IEMOCAP)')
@@ -57,8 +57,8 @@ parser.add_argument('--clip', type=float, default=0.8,
                     help='gradient clip value (default: 0.8)')
 parser.add_argument('--lr', type=float, default=2e-3,
                     help='initial learning rate (default: 1e-3)')
-parser.add_argument('--optim', type=str, default='Adam',
-                    help='optimizer to use (default: Adam)')
+parser.add_argument('--optim', type=str, default='AdamW',
+                    help='optimizer to use (default: AdamW)')
 parser.add_argument('--num_epochs', type=int, default=60,
                     help='number of epochs (default: 60)')
 parser.add_argument('--when', type=int, default=30,
@@ -71,20 +71,20 @@ parser.add_argument('--log_interval', type=int, default=30,
                     help='frequency of result logging (default: 30)')
 parser.add_argument('--seed', type=int, default=1111,
                     help='random seed')
-parser.add_argument('--no_cuda', action='store_true',
+parser.add_argument('--no_cuda', action='store_true', default=False,
                     help='do not use cuda')
 parser.add_argument('--name', type=str, default='mult',
                     help='name of the trial (default: "mult")')
 # Domain adaptation
 parser.add_argument('--da_weight', type=float, default=0.1,
-                    help='weight for CMD domain alignment loss (default: 0.1)')
+                    help='weight for domain alignment loss (default: 0.1)')
 parser.add_argument('--cmd_k', type=int, default=5,
                     help='number of moments for CMD (default: 5)')
 parser.add_argument('--device', type=int, default=3,
                     help='cuda device id to use (default: 3)')
 parser.add_argument('--miss_weight', type=float, default=1.0,
                     help='weight for missing-domain task loss')
-parser.add_argument('--diagnostics', action='store_true',
+parser.add_argument('--diagnostics', action='store_true', default=False,
                     help='enable per-emotion diagnostics for IEMOCAP')
 args = parser.parse_args()
 
